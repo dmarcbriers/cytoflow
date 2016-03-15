@@ -1,17 +1,38 @@
-from traits.api import HasStrictTraits, Str, CStr, List, Float, provides, \
-    Instance, Bool, on_trait_change, DelegatesTo, Any, Constant
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import division, absolute_import
+
+import time
+
+from traits.api import (HasStrictTraits, Str, CStr, List, Float, provides,
+                        Instance, Bool, on_trait_change, DelegatesTo, Any,
+                        Constant)
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Cursor
+from matplotlib import scale
 import numpy as np
 
-import time
+import cytoflow.utility as util
+import cytoflow.views
 
-from cytoflow.views.scatterplot import ScatterplotView
-from cytoflow.operations import IOperation
-from cytoflow.views import ISelectionView
-from cytoflow.utility import CytoflowOpError, CytoflowViewError
+from .i_operation import IOperation
 
 @provides(IOperation)
 class PolygonOp(HasStrictTraits):
@@ -52,6 +73,9 @@ class PolygonOp(HasStrictTraits):
     xchannel = Str()
     ychannel = Str()
     vertices = List((Float, Float))
+    
+    _xscale = Str("linear")
+    _yscale = Str("linear")
         
     def apply(self, experiment):
         """Applies the threshold to an experiment.
@@ -70,67 +94,78 @@ class PolygonOp(HasStrictTraits):
             
         Raises
         ------
-        CytoflowOpError
+        util.CytoflowOpError
             if for some reason the operation can't be applied to this
-            experiment. The reason is in CytoflowOpError.args
+            experiment. The reason is in util.CytoflowOpError.args
         """
         
         if not experiment:
-            raise CytoflowOpError("No experiment specified")
-        
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
-        
+            raise util.CytoflowOpError("No experiment specified")
+
         if self.name in experiment.data.columns:
-            raise CytoflowOpError("op.name is in the experiment already!")
+            raise util.CytoflowOpError("op.name is in the experiment already!")
         
         if not self.xchannel or not self.ychannel:
-            raise CytoflowOpError("Must specify both an x channel and a y channel")
+            raise util.CytoflowOpError("Must specify both an x channel and a y channel")
         
-        if not self.xchannel in exp_channels:
-            raise CytoflowOpError("xchannel {0} is not in the experiment"
+        if not self.xchannel in experiment.channels:
+            raise util.CytoflowOpError("xchannel {0} is not in the experiment"
                                   .format(self.xchannel))
                                   
-        if not self.ychannel in exp_channels:
-            raise CytoflowOpError("ychannel {0} is not in the experiment"
+        if not self.ychannel in experiment.channels:
+            raise util.CytoflowOpError("ychannel {0} is not in the experiment"
                                   .format(self.ychannel))
               
         if len(self.vertices) < 3:
-            raise CytoflowOpError("Must have at least 3 vertices")
+            raise util.CytoflowOpError("Must have at least 3 vertices")
        
         if any([len(x) != 2 for x in self.vertices]):
-            return CytoflowOpError("All vertices must be lists of length = 2") 
+            return util.CytoflowOpError("All vertices must be lists of length = 2") 
         
         # make sure name got set!
         if not self.name:
-            raise CytoflowOpError("You have to set the Polygon gate's name "
+            raise util.CytoflowOpError("You have to set the Polygon gate's name "
                                "before applying it!")
         
         # make sure old_experiment doesn't already have a column named self.name
         if(self.name in experiment.data.columns):
-            raise CytoflowOpError("Experiment already contains a column {0}"
+            raise util.CytoflowOpError("Experiment already contains a column {0}"
                                .format(self.name))
             
-        # use a matplotlib Path because testing for membership is a fast C fn.
-        path = mpl.path.Path(np.array(self.vertices))
-        xy_data = experiment.data.as_matrix(columns = [self.xchannel,
-                                                           self.ychannel])
+        # there's a bit of a subtlety here: if the vertices were 
+        # selected with an interactive plot, and that plot had scaled
+        # axes, we need to apply that scale function to both the
+        # vertices and the data before looking for path membership
+        xscale = scale.scale_factory(self._xscale, None)
+        xscale.range = experiment.metadata[self.xchannel]['range']
+        x_tf = xscale.get_transform()
+        yscale = scale.scale_factory(self._yscale, None)
+        yscale.range = experiment.metadata[self.ychannel]['range']
+        y_tf = yscale.get_transform()
         
-        new_experiment = experiment.clone()
-        
-        new_experiment[self.name] = path.contains_points(xy_data)
+        vertices = [(x_tf.transform_non_affine(x), y_tf.transform_non_affine(y))
+                    for (x, y) in self.vertices]
+        data = experiment.data[[self.xchannel, self.ychannel]].copy()
+        data[self.xchannel] = x_tf.transform_non_affine(data[self.xchannel])
+        data[self.ychannel] = y_tf.transform_non_affine(data[self.ychannel])
             
-        new_experiment.conditions[self.name] = "bool"
-        new_experiment.metadata[self.name] = {}
+        # use a matplotlib Path because testing for membership is a fast C fn.
+        path = mpl.path.Path(np.array(vertices))
+        xy_data = data.as_matrix(columns = [self.xchannel, self.ychannel])
+        
+        new_experiment = experiment.clone()        
+        new_experiment.add_condition(self.name, 
+                                     "bool", 
+                                     path.contains_points(xy_data))
+        new_experiment.history.append(self.clone_traits())
             
         return new_experiment
     
-    def default_view(self):
-        return PolygonSelection(op = self)
+    def default_view(self, **kwargs):
+        return PolygonSelection(op = self, **kwargs)
     
-@provides(ISelectionView)
-class PolygonSelection(ScatterplotView):
+@provides(cytoflow.views.ISelectionView)
+class PolygonSelection(cytoflow.views.ScatterplotView):
     """Plots, and lets the user interact with, a 2D polygon selection.
     
     Attributes
@@ -168,7 +203,7 @@ class PolygonSelection(ScatterplotView):
     id = Constant('edu.mit.synbio.cytoflow.views.polygon')
     friendly_id = Constant("Polygon Selection")
     
-    op = Instance(PolygonOp)
+    op = Instance(IOperation)
     name = DelegatesTo('op')
     xchannel = DelegatesTo('op')
     ychannel = DelegatesTo('op')
@@ -188,13 +223,13 @@ class PolygonSelection(ScatterplotView):
         """Plot self.view, and then plot the selection on top of it."""
         
         if not experiment:
-            raise CytoflowViewError("No experiment specified")
+            raise util.CytoflowViewError("No experiment specified")
         
         if self.xfacet:
-            raise CytoflowViewError("RangeSelection.xfacet must be empty or `Undefined`")
+            raise util.CytoflowViewError("RangeSelection.xfacet must be empty or `Undefined`")
         
         if self.yfacet:
-            raise CytoflowViewError("RangeSelection.yfacet must be empty or `Undefined`")
+            raise util.CytoflowViewError("RangeSelection.yfacet must be empty or `Undefined`")
         
         super(PolygonSelection, self).plot(experiment, **kwargs)
         self._ax = plt.gca()
@@ -210,10 +245,9 @@ class PolygonSelection(ScatterplotView):
             self._patch.remove()
             
         if self._drawing or not self.op.vertices or len(self.op.vertices) < 3 \
-           or any([len(x) != 2 for x in self.op.vertices]):
+                         or any([len(x) != 2 for x in self.op.vertices]):
             return
              
-
         patch_vert = np.concatenate((np.array(self.op.vertices), 
                                     np.array((0,0), ndmin = 2)))
                                     
@@ -249,6 +283,8 @@ class PolygonSelection(ScatterplotView):
         if event.dblclick or (time.clock() - self._last_click_time < 0.5):
             self._drawing = False
             self.op.vertices = map(tuple, self._path.vertices)
+            self.op._xscale = plt.gca().get_xscale()
+            self.op._yscale = plt.gca().get_yscale()
             self._path = None
             return
         
@@ -304,33 +340,20 @@ class PolygonSelection(ScatterplotView):
         
 if __name__ == '__main__':
     import cytoflow as flow
-    import fcsparser
+    tube1 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
+                      conditions = {"Dox" : 10.0})
+    
+    tube2 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
+                      conditions = {"Dox" : 1.0})                      
 
-    tube1 = fcsparser.parse('../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
-                            reformat_meta = True, 
-                            channel_naming = "$PnN")
-
-    tube2 = fcsparser.parse('../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-    
-    ex = flow.Experiment()
-    ex.add_conditions({"Dox" : "float"})
-    
-    ex.add_tube(tube1, {"Dox" : 10.0})
-    ex.add_tube(tube2, {"Dox" : 1.0})
-    
-    hlog = flow.HlogTransformOp()
-    hlog.name = "Hlog transformation"
-    hlog.channels = ['V2-A', 'Y2-A']
-    ex2 = hlog.apply(ex)
+    ex = flow.ImportOp(conditions = {"Dox" : "float"}, tubes = [tube1, tube2])
     
     p = PolygonOp(xchannel = "V2-A",
                   ychannel = "Y2-A")
-    v = p.default_view()
+    v = p.default_view(xscale = "logicle", yscale = "logicle")
     
     plt.ioff()
-    v.plot(ex2)
+    v.plot(ex)
     v.interactive = True
     plt.show()
     print p.vertices

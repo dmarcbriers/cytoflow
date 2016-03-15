@@ -1,8 +1,13 @@
 #CytoFlow
 ##Python tools for quantitative, reproducible flow cytometry analysis
 
-Welcome to a different style of flow cytometry analysis.  For a quick demo,
-check out [an introductory Jupyter notebook](http://nbviewer.ipython.org/github/bpteague/cytoflow/blob/master/docs/examples-basic/Basic%20Cytometry.ipynb), and then look at [an example with some real data](http://nbviewer.ipython.org/github/bpteague/cytoflow/blob/master/docs/examples-basic/Yeast%20Dose%20Reponse.ipynb)
+Welcome to a different style of flow cytometry analysis.  Take a look at some example [Jupyter](http://jupyter.org/) notebooks:
+
+* [Basic flow cytometry analysis](http://nbviewer.ipython.org/github/bpteague/cytoflow/blob/master/docs/examples-basic/Basic%20Cytometry.ipynb)
+* [An small-molecule induction curve with yeast](http://nbviewer.ipython.org/github/bpteague/cytoflow/blob/master/docs/examples-basic/Yeast%20Dose%20Reponse.ipynb)
+* [Data-driven gating with gaussian mixture models](https://github.com/bpteague/cytoflow/blob/master/docs/examples-basic/Machine%20Learning.ipynb)
+* [Reproduced some analysis from a published paper](http://nbviewer.jupyter.org/github/bpteague/cytoflow-examples/blob/master/kiani/Kiani%20Nature%20Methods%202014.ipynb)
+* [Calibrated flow cytometry in MEFLs](http://nbviewer.jupyter.org/github/bpteague/cytoflow-examples/blob/master/tasbe/TASBE%20Workflow.ipynb)
 
 ### What's wrong with other packages?  
 
@@ -27,6 +32,9 @@ A few things.
 * **Free and open-source.**  Use the software free-of-charge; modify it to
   suit your own needs, then contribute your changes back so the rest of the
   community can benefit from them.
+
+* Provides both **Python modules** (relatively complete) and a 
+  **point-and-click interface** (still in development) 
 
 * An emphasis on **metadata**.  CytoFlow assumes that you are measuring
   fluorescence on several samples that were treated differently: either
@@ -57,17 +65,27 @@ A few things.
   users feel right at home.)
   
 * **Extensible.**  Adding a new analysis module is simple; the interface to
-  implement is only four functions.
+  implement is only two or three functions.
 
-* **Statistically sound.** Ready access to useful data-driven tools for
+* **Quantitative and tatistically sound.** Ready access to useful data-driven tools for
   analysis, such as fitting 2-dimensional Gaussians for automated gating
-  and mixture modeling.
+  and mixture modeling.  ``cytoflow`` discourages (but does not prevent) wholesale
+  rescaling of data, for example using the ``log10`` operation.  Instead, it
+  encourages rescaling of the data's **plots** instead.
 
-#### Note: this is still beta software!  Prepare to run into bugs.  The point-and-click interface is even buggier, and does not expose all the functionality of the underlying analysis modules.  Caveat emptor!
+#### Note: this is still beta software!  Caveat emptor!
   
 ### Installation
 
-See the [installation notes](http://cytoflow.readthedocs.org/en/latest/INSTALL.html) on [ReadTheDocs](http://cytoflow.readthedocs.org/).
+See the [installation notes](http://cytoflow.readthedocs.org/en/latest/INSTALL.html) on [ReadTheDocs](http://cytoflow.readthedocs.org/).  Installation has been tested
+on Linux (Ubuntu Trusty) and Windows 7 (x86_64).  Mac installation should be similar.
+
+### Documentation
+
+There is some basic documentation at [ReadTheDocs](http://cytoflow.readthedocs.org/).
+Perhaps of most use is the [module index](http://cytoflow.readthedocs.org/en/latest/py-modindex.html).
+The example [Jupyter](http://jupyter.org/) notebooks, above, demonstrate how the package
+is intended to be used interactively.
 
 ### Required packages
 
@@ -76,13 +94,14 @@ These are all in the `setuptools` spec.
 For the core `cytoflow` library, you need the following Python packages:
 ```
 python >= 2.7
-pandas >= 0.15.0
+pandas >= 0.17.0
 numpy >= 1.9.0
 numexpr >= 2.1
+bottleneck >= 1.0
 matplotlib == 1.4.3
 scipy >= 0.14
 scikit-learn >= 0.16
-seaborn >= 0.6.0
+seaborn >= 0.7.0
 traits >= 4.0
 fcsparser >= 0.1.1
 ```

@@ -1,16 +1,42 @@
-from traits.api import HasStrictTraits, provides, Str, List, Float, Dict, \
-                        Constant
-import math
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import division, absolute_import
+
+import math, warnings, exceptions
+
+from traits.api import (HasStrictTraits, provides, Str, List, Float, Dict,
+                        Constant)
+
 import numpy as np
 
-from cytoflow.utility import CytoflowOpError
-from logicle_ext.Logicle import Logicle
-from cytoflow.operations import IOperation
+import cytoflow.utility as util
+from cytoflow.utility.logicle_ext.Logicle import Logicle
+
+from .i_operation import IOperation
 
 @provides(IOperation)
 class LogicleTransformOp(HasStrictTraits):
     """
     An implementation of the Logicle scaling method.
+    
+    .. note:: Deprecated
+        Use the `scale` attributes to change the way data is plotted; leave
+        the underlying data alone!
     
     This scaling method implements a "linear-like" region around 0, and a
     "log-like" region for large values, with a very smooth transition between
@@ -79,6 +105,12 @@ class LogicleTransformOp(HasStrictTraits):
     A = Dict(Str, Float, desc = "additional decades of negative data to include.")
     r = Float(0.05, desc = "quantile to use for estimating the W parameter.")
     
+    def __init__(self, **kwargs):
+        warnings.warn("Transforming data with LogicleTransformOp is deprecated; "
+                      "rescale the data with the 'logicle' scale instead.",
+                      exceptions.DeprecationWarning)
+        super(LogicleTransformOp, self).__init__(**kwargs)
+    
     def estimate(self, experiment, subset = None):
         """Estimate A and W per-channel from the data (given r.)
         
@@ -95,10 +127,10 @@ class LogicleTransformOp(HasStrictTraits):
         """
 
         if not experiment:
-            raise CytoflowOpError("no experiment specified")
+            raise util.CytoflowOpError("no experiment specified")
         
         if self.r <= 0 or self.r >= 1:
-            raise CytoflowOpError("r must be between 0 and 1")
+            raise util.CytoflowOpError("r must be between 0 and 1")
         
         if subset:
             data = experiment.query(subset)
@@ -117,50 +149,48 @@ class LogicleTransformOp(HasStrictTraits):
             else:
                 # ... unless there aren't any negative values, in which case
                 # you probably shouldn't use this transform
-                raise CytoflowOpError("You shouldn't use the Logicle transform "
-                                      "for channels without any negative data. "
-                                      "Try a hlog or a log10 transform instead.")
+                self.W[channel] = 0.5
+                warnings.warn( "Channel {0} doesn't have any negative data. " 
+                               "Try a hlog or a log10 transform instead."
+                               .format(channel),
+                               util.CytoflowOpWarning)
     
     def apply(self, experiment):
         """Applies the Logicle transform to channels"""
         
         if not experiment:
-            raise CytoflowOpError("no experiment specified")
-        
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
-        
-        if not set(self.channels).issubset(set(exp_channels)):
-            raise CytoflowOpError("self.channels isn't a subset "
+            raise util.CytoflowOpError("no experiment specified")
+
+        if not set(self.channels).issubset(set(experiment.channels)):
+            raise util.CytoflowOpError("self.channels isn't a subset "
                                   "of experiment.channels")
         
         if self.M <= 0:
-            raise CytoflowOpError("M must be > 0")
+            raise util.CytoflowOpError("M must be > 0")
 
         for channel in self.channels:
             # the Logicle C++/SWIG extension is REALLY picky about it
             # being a double
             
             if experiment[channel].dtype != np.float64:
-                raise CytoflowOpError("The dtype for channel {0} MUST be "
+                raise util.CytoflowOpError("The dtype for channel {0} MUST be "
                                       "np.float64.  Please submit a bug report."
                                       .format(channel))
             
             if not channel in self.W: 
-                raise CytoflowOpError("W wasn't set for channel {0}"
+                raise util.CytoflowOpError("W wasn't set for channel {0}"
                                       .format(channel))
                 
             if self.W[channel] <= 0:
-                raise CytoflowOpError("W for channel {0} must be > 0"
+                raise util.CytoflowOpError("W for channel {0} must be > 0"
                                       .format(channel))
             
             if not channel in self.A:
-                raise CytoflowOpError("A wasn't set for channel {0}"
+                raise util.CytoflowOpError("A wasn't set for channel {0}"
                                       .format(channel))
                 
             if self.A[channel] < 0:
-                raise CytoflowOpError("A for channel {0} must be >= 0"
+                raise util.CytoflowOpError("A for channel {0} must be >= 0"
                                       .format(channel))
         
         new_experiment = experiment.clone()
@@ -178,5 +208,6 @@ class LogicleTransformOp(HasStrictTraits):
             new_experiment[channel] = logicle_fwd(new_experiment[channel])
             new_experiment.metadata[channel]["xforms"].append(logicle_fwd)
             new_experiment.metadata[channel]["xforms_inv"].append(logicle_rev)
-            
+
+        new_experiment.history.append(self.clone_traits())            
         return new_experiment

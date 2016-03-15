@@ -1,9 +1,11 @@
 sphinxcontrib-napoleon==0.2.11
 mock
-fcsparser
-scikit-learn
-numpy
 pandas
-seaborn
+fcsparser
+numpy
+numexpr
 matplotlib
+scipy
+scikit-learn
+seaborn
 traits

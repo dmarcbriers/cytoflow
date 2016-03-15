@@ -1,10 +1,38 @@
-from traits.api import HasStrictTraits, Str, List, Float, Dict, provides, Constant
-from cytoflow.operations import IOperation
-from cytoflow.utility import CytoflowOpError
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import division, absolute_import
+
+import warnings, exceptions
+
+from traits.api import (HasStrictTraits, Str, List, Float, Dict, provides, 
+                        Constant)
+
+import cytoflow.utility as util
+
+from .i_operation import IOperation
 
 @provides(IOperation)
 class HlogTransformOp(HasStrictTraits):
     """An operation that applies the Hyperlog transformation to channels.
+    
+    .. note:: Deprecated
+        Use the `scale` attributes to change the way data is plotted; leave
+        the underlying data alone!
     
     Attributes
     ----------
@@ -51,6 +79,12 @@ class HlogTransformOp(HasStrictTraits):
     b = Dict(Str, Float)
     r = Dict(Str, Float)
     
+    def __init__(self, **kwargs):
+        warnings.warn("Transforming data with HlogTransformOp is deprecated; "
+                      "rescale the data with the 'logicle' scale instead.",
+                      exceptions.DeprecationWarning)
+        super(HlogTransformOp, self).__init__(**kwargs)
+    
     def apply(self, experiment):
         """Applies the hlog transform to channels in an experiment.
         
@@ -67,20 +101,16 @@ class HlogTransformOp(HasStrictTraits):
         """
 
         if not experiment:
-            raise CytoflowOpError("No experiment specified")
+            raise util.CytoflowOpError("No experiment specified")
         
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
-        
-        if not set(self.channels).issubset(set(exp_channels)):
-            raise CytoflowOpError("Op channels are not in experiment!")
+        if not set(self.channels).issubset(set(experiment.channels)):
+            raise util.CytoflowOpError("Op channels are not in experiment!")
         
         if not set(self.b.keys()) <= set(self.channels):
-            raise CytoflowOpError("Some keys in op.b are not in experiment")
+            raise util.CytoflowOpError("Some keys in op.b are not in experiment")
         
         if not set(self.r.keys()) <= set(self.channels):
-            raise CytoflowOpError("Some keys in op.r are not in experiment")
+            raise util.CytoflowOpError("Some keys in op.r are not in experiment")
         
         new_experiment = experiment.clone()
         
@@ -91,7 +121,7 @@ class HlogTransformOp(HasStrictTraits):
             
             if (channel not in experiment.metadata
                 or 'range' not in experiment.metadata[channel]):
-                raise CytoflowOpError("Range metadata not set for channel {0}"
+                raise util.CytoflowOpError("Range metadata not set for channel {0}"
                                       .channel)
             
             d = np.log10(experiment.metadata[channel]['range'])
@@ -106,7 +136,8 @@ class HlogTransformOp(HasStrictTraits):
             # TODO - figure out what 
             new_experiment.metadata[channel]["xforms"].append(hlog_fwd)
             new_experiment.metadata[channel]["xforms_inv"].append(hlog_rev)
-
+            
+        new_experiment.history.append(self.clone_traits())
         return new_experiment
     
 # the following functions were taken from Eugene Yurtsev's FlowCytometryTools

@@ -1,17 +1,38 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Feb 11, 2015
 
 @author: brian
 """
+
+#import threading, time
+
+import warnings
+
 from pyface.tasks.api import TaskPane
-from matplotlib_editor import MPLFigureEditor
 from traits.api import Instance, provides
 from pyface.tasks.i_task_pane import ITaskPane
 import matplotlib.pyplot as plt
 
 from cytoflow.utility import CytoflowViewError
 
-import threading, time
+from matplotlib_editor import MPLFigureEditor
 
 @provides(ITaskPane)
 class FlowTaskPane(TaskPane):
@@ -75,25 +96,26 @@ class FlowTaskPane(TaskPane):
             self.clear_plot()
             return
         
-        if wi.current_view == wi.default_view:
-            # plotting the default view
+        wi.current_view.error = ""
+        wi.current_view.warning = ""
+        
+        with warnings.catch_warnings(record = True) as w:
             try:
-                wi.current_view.plot(wi.previous.result)
+                if wi.current_view == wi.default_view:
+                    # plotting the default view
+                    wi.current_view.plot(wi.previous.result)
+                else:
+                    if not wi.result:
+                        self.clear_plot()
+                        return
+                    
+                    wi.current_view.plot(wi.result)
+                    
+                if w:
+                    wi.current_view.warning = w[-1].message.__str__()
+                    
             except CytoflowViewError as e:
                 wi.current_view.error = e.__str__()
-            else:
-                wi.current_view.error = ""
-        else:
-            if not wi.result:
-                self.clear_plot()
-                return
-            
-            try:
-                wi.current_view.plot(wi.result)
-            except CytoflowViewError as e:
-                wi.current_view.error = e.__str__()
-            else:
-                wi.current_view.error = ""
 
         self.editor.figure = plt.gcf()
            

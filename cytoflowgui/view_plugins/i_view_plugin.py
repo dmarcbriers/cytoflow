@@ -1,3 +1,20 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Mar 15, 2015
 
@@ -5,8 +22,9 @@ Created on Mar 15, 2015
 """
 
 from traits.api import Interface, Str, HasTraits, Property, Instance, List
-from traitsui.api import Handler
+from traitsui.api import Handler, Group, Item
 from cytoflowgui.workflow_item import WorkflowItem
+from cytoflowgui.color_text_editor import ColorTextEditor
 
 VIEW_PLUGIN_EXT = 'edu.mit.synbio.cytoflow.view_plugins'
 
@@ -41,7 +59,21 @@ class IViewPlugin(Interface):
         
 class PluginViewMixin(HasTraits):
     handler = Instance(Handler, transient = True)
+    warning = Str(transient = True)
     error = Str(transient = True)
+    
+shared_view_traits = Group(Item('object.warning',
+                                label = 'Warning',
+                                visible_when = 'object.warning',
+                                editor = ColorTextEditor(foreground_color = "#000000",
+                                                         background_color = "#ffff99",
+                                                         word_wrap = True)),
+                           Item('object.error',
+                                 label = 'Error',
+                                 visible_when = 'object.error',
+                                 editor = ColorTextEditor(foreground_color = "#000000",
+                                                          background_color = "#ff9191",
+                                                          word_wrap = True)))
 
 class ViewHandlerMixin(HasTraits):
     """
@@ -58,8 +90,8 @@ class ViewHandlerMixin(HasTraits):
         """
         doc
         """
-        if self.wi and self.wi.channels:
-            return self.wi.channels
+        if self.wi and self.wi.result and self.wi.result.channels:
+            return self.wi.result.channels
         else:
             return []
          
@@ -69,6 +101,7 @@ class ViewHandlerMixin(HasTraits):
         doc
         """
         ret = [""]
-        if self.wi and self.wi.conditions:
-            ret.extend(self.wi.conditions.keys())
+        if self.wi and self.wi.result and self.wi.result.conditions:
+            ret.extend(self.wi.result.conditions.keys())
         return ret
+

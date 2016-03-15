@@ -1,15 +1,31 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 '''
 Created on Oct 30, 2015
 
 @author: brian
 '''
+import unittest
+
 import matplotlib
 matplotlib.use('Agg')
 
-import unittest
-
 import cytoflow as flow
-import fcsparser
 
 class TestExperiment(unittest.TestCase):
     """
@@ -19,12 +35,10 @@ class TestExperiment(unittest.TestCase):
     def setUp(self):
         import os
         self.cwd = os.path.dirname(os.path.abspath(__file__))
-        self.ex = flow.Experiment(metadata = {"name_meta" : "$PnN"})
-        tube = fcsparser.parse(self.cwd + '/data/tasbe/blank.fcs', 
-                               reformat_meta = True,
-                               channel_naming = "$PnN")
-        self.ex.add_tube(tube, {})
-        
+        self.ex = flow.ImportOp(conditions = {},
+                                tubes = [flow.Tube(file = self.cwd + '/data/tasbe/blank.fcs',
+                                                   conditions = {})]).apply()
+
         self.op = flow.AutofluorescenceOp(
                     blank_file = self.cwd + '/data/tasbe/blank.fcs',
                     channels = ["Pacific Blue-A", "FITC-A", "PE-Tx-Red-YG-A"])
@@ -37,9 +51,9 @@ class TestExperiment(unittest.TestCase):
         
         # I don't know why this gives different results on my machine 
         # and on Travis-CI.  Weeeeird.
-        self.assertAlmostEqual(self.op._af_stdev["FITC-A"], 77.12065887451172, places = 3)
-        self.assertAlmostEqual(self.op._af_stdev["Pacific Blue-A"], 51.380287170410156, places = 3)
-        self.assertAlmostEqual(self.op._af_stdev["PE-Tx-Red-YG-A"], 117.84236145019531, places = 3)
+        self.assertAlmostEqual(self.op._af_stdev["FITC-A"], 77.12065887451172, places = 1)
+        self.assertAlmostEqual(self.op._af_stdev["Pacific Blue-A"], 51.380287170410156, places = 2)
+        self.assertAlmostEqual(self.op._af_stdev["PE-Tx-Red-YG-A"], 117.84236145019531, places = 2)
                 
     def test_apply(self):
         ex2 = self.op.apply(self.ex)

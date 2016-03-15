@@ -1,20 +1,38 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 '''
 Created on Apr 25, 2015
 
 @author: brian
 '''
 
+from traits.api import provides, Callable
 from traitsui.api import View, Item, EnumEditor, Controller
 from envisage.api import Plugin, contributes_to
-from traits.api import provides, Callable
-from cytoflowgui.op_plugins.i_op_plugin \
-    import IOperationPlugin, OpHandlerMixin, PluginOpMixin, OP_PLUGIN_EXT
-from cytoflow.operations.range2d import Range2DOp, RangeSelection2D
 from pyface.api import ImageResource
-from cytoflowgui.view_plugins.i_view_plugin import ViewHandlerMixin, PluginViewMixin
-from cytoflowgui.subset_editor import SubsetEditor
+
+from cytoflow.operations.range2d import Range2DOp, RangeSelection2D
 from cytoflow.views.i_selectionview import ISelectionView
-from cytoflowgui.color_text_editor import ColorTextEditor
+
+from cytoflowgui.op_plugins.i_op_plugin \
+    import IOperationPlugin, OpHandlerMixin, PluginOpMixin, OP_PLUGIN_EXT, shared_op_traits
+from cytoflowgui.view_plugins.i_view_plugin import ViewHandlerMixin, PluginViewMixin, shared_view_traits
+from cytoflowgui.subset_editor import SubsetEditor
 
 class Range2DHandler(Controller, OpHandlerMixin):
     
@@ -30,12 +48,7 @@ class Range2DHandler(Controller, OpHandlerMixin):
                          label = "Y Channel"),
                     Item('object.ylow', label = "Y Low"),
                     Item('object.yhigh', label = "Y High"),
-                    Item('handler.wi.error',
-                         label = 'Error',
-                         visible_when = 'handler.wi.error',
-                         editor = ColorTextEditor(foreground_color = "#000000",
-                                                  background_color = "#ff9191",
-                                                  word_wrap = True))) 
+                    shared_op_traits) 
         
 class RangeView2DHandler(Controller, ViewHandlerMixin):
     def default_traits_view(self):
@@ -44,16 +57,21 @@ class RangeView2DHandler(Controller, ViewHandlerMixin):
                     Item('object.xchannel', 
                          label = "X Channel", 
                          style = 'readonly'),
+                    Item('object.xscale',
+                         label = "X Scale"),
                     Item('object.ychannel',
                          label = "Y Channel",
                          style = 'readonly'),
+                    Item('object.yscale',
+                         label = "Y Scale"),
                     Item('object.huefacet',
                          editor=EnumEditor(name='handler.conditions'),
                          label="Color\nFacet"),
                     Item('_'),
                     Item('object.subset',
                          label = "Subset",
-                         editor = SubsetEditor(experiment = 'handler.wi.previous.result')))
+                         editor = SubsetEditor(experiment = 'handler.wi.previous.result')),
+                    shared_view_traits)
 
 @provides(ISelectionView)
 class Range2DSelectionView(RangeSelection2D, PluginViewMixin):

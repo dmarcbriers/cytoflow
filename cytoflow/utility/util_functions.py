@@ -1,3 +1,20 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Mar 5, 2015
 
@@ -8,20 +25,11 @@ from __future__ import division
 import numpy as np
 from scipy import stats
 
-class CytoflowError(RuntimeError):
-    pass
-
-class CytoflowOpError(CytoflowError):
-    pass
-
-class CytoflowViewError(CytoflowError):
-    pass
-
 def iqr(a):
     """Calculate the IQR for an array of numbers."""
     a = np.asarray(a)
-    q1 = stats.scoreatpercentile(a, 25)
-    q3 = stats.scoreatpercentile(a, 75)
+    q1 = np.nanpercentile(a, 25)
+    q3 = np.nanpercentile(a, 75)
     return q3 - q1
 
 def num_hist_bins(a):
@@ -29,12 +37,13 @@ def num_hist_bins(a):
     # From http://stats.stackexchange.com/questions/798/
     a = np.asarray(a)
     h = 2 * iqr(a) / (len(a) ** (1 / 3))
-    
+      
     # fall back to 10 bins if iqr is 0
     if h == 0:
         return 10.
     else:
-        return np.ceil((a.max() - a.min()) / h)
+        return np.ceil((np.nanpercentile(a, 99) - 
+                        np.nanpercentile(a, 1)) / h)
     
 def geom_mean(a):
     """

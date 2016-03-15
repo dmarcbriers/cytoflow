@@ -1,11 +1,28 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Feb 11, 2015
 
 @author: brian
 """
 
-from traits.etsconfig.api import ETSConfig
-ETSConfig.toolkit = 'qt4'
+# from traits.etsconfig.api import ETSConfig
+# ETSConfig.toolkit = 'qt4'
 
 import os.path
 
@@ -15,15 +32,15 @@ from pyface.tasks.action.api import SMenu, SMenuBar, SToolBar, TaskAction
 from pyface.api import FileDialog, OK, ImageResource, AboutDialog
 from envisage.api import Plugin, ExtensionPoint, contributes_to
 from envisage.ui.tasks.api import TaskFactory
-from flow_task_pane import FlowTaskPane
+
+from cytoflowgui.flow_task_pane import FlowTaskPane
 from cytoflowgui.workflow_pane import WorkflowDockPane
 from cytoflowgui.view_pane import ViewDockPane
 from cytoflowgui.workflow import Workflow
-
 from cytoflowgui.op_plugins import IOperationPlugin, ImportPlugin, OP_PLUGIN_EXT
 from cytoflowgui.view_plugins import IViewPlugin, VIEW_PLUGIN_EXT
 from cytoflowgui.workflow_item import WorkflowItem
-
+from cytoflowgui.ipython import IPythonNotebookWriter
 
 from util import UniquePriorityQueue
 import threading
@@ -68,9 +85,12 @@ class FlowTask(Task):
                               TaskAction(name='Save As...',
                                          method='on_save_as',
                                          accelerator='Ctrl+e'),
-                              TaskAction(name='Export...',
+                              TaskAction(name='Export image...',
                                          method='on_export',
                                          accelerator='Ctrl+x'),
+                              TaskAction(name='Export IPython notebook...',
+                                         method='on_ipython',
+                                         accelerator='Ctrl+I'),                              
                               TaskAction(name='Preferences...',
                                          method='on_prefs',
                                          accelerator='Ctrl+P'),
@@ -96,6 +116,10 @@ class FlowTask(Task):
                                       name = "Export",
                                       tooltip='Export the current plot',
                                       image=ImageResource('export')),
+                           TaskAction(method='on_ipython',
+                                      name='IPython',
+                                      tooltip="Export to an IPython notebook...",
+                                      image=ImageResource('ipython')),
                            TaskAction(method='on_prefs',
                                       name = "Prefs",
                                       tooltip='Preferences',
@@ -143,10 +167,6 @@ class FlowTask(Task):
         
             wi.operation.tubes.append(tube1)
             wi.operation.tubes.append(tube2)
-                        
-            self.add_operation('edu.mit.synbio.cytoflowgui.op_plugins.hlog')
-            self.model.selected.operation.channels = ["V2-A", "Y2-A"]
-            self.model.selected.operation.name = "H"
               
             self.add_operation('edu.mit.synbio.cytoflowgui.op_plugins.threshold')
             self.model.selected.operation.channel = "Y2-A"
@@ -168,7 +188,8 @@ class FlowTask(Task):
         return [WorkflowDockPane(model = self.model, 
                                  plugins = self.op_plugins,
                                  task = self), 
-                ViewDockPane(plugins = self.view_plugins,
+                ViewDockPane(model = self.model,
+                             plugins = self.view_plugins,
                              task = self)]
         
     def on_new(self):
@@ -220,7 +241,7 @@ class FlowTask(Task):
         
         wi = self.model.workflow[0]
         while True:
-            wi.valid = "invalid"
+            wi.status = "invalid"
             with self.worker_lock:
                 self.to_update.put_nowait((self.model.workflow.index(wi), wi))
             if wi.next:
@@ -268,6 +289,19 @@ class FlowTask(Task):
                             action = 'save as')
         if dialog.open() == OK:
             self.view.export(dialog.path)
+            
+    def on_ipython(self):
+        """
+        Shows a dialog to export the workflow to an IPython notebook
+        """
+        
+        dialog = FileDialog(parent = self.window.control,
+                            action = 'save as',
+                            wildcard = '*.ipynb')
+        if dialog.open() == OK:
+            writer = IPythonNotebookWriter(file = dialog.path)
+            writer.export(self.workflow)
+   
     
     def on_prefs(self):
         pass
@@ -275,7 +309,7 @@ class FlowTask(Task):
     def on_about(self):
         from cytoflow import __version__ as cf_version
         from fcsparser import __version__ as fcs_version
-        from pandas.version import version as pd_version
+        from pandas.version import __version__ as pd_version
         from numpy.version import version as np_version
         from numexpr import __version__ as numexp_version
         from seaborn import __version__ as sns_version
@@ -368,7 +402,7 @@ class FlowTask(Task):
         # invalidate this workflow item and all the ones following it
         wi = self.model.selected
         while True:
-            wi.valid = "invalid"
+            wi.status = "invalid"
             with self.worker_lock:
                 self.to_update.put_nowait((self.model.workflow.index(wi), wi))
             if wi.next:

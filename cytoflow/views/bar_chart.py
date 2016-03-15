@@ -1,19 +1,29 @@
-from __future__ import division
+#!/usr/bin/env python2.7
 
-if __name__ == '__main__':
-    from traits.etsconfig.api import ETSConfig
-    ETSConfig.toolkit = 'qt4'
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    import os
-    os.environ['TRAITS_DEBUG'] = "1"
+from __future__ import division, absolute_import
 
 from traits.api import HasStrictTraits, Str, provides, Callable
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
-from cytoflow.views import IView
-from cytoflow.utility import CytoflowViewError
+import cytoflow.utility as util
+from .i_view import IView
 
 @provides(IView)
 class BarChartView(HasStrictTraits):
@@ -27,7 +37,7 @@ class BarChartView(HasStrictTraits):
     channel : Str
         the name of the channel we're summarizing 
         
-    variable : Str
+    by : Str
         the name of the conditioning variable to group the chart's bars
 
     function : Callable (1D numpy.ndarray --> float)
@@ -88,7 +98,7 @@ class BarChartView(HasStrictTraits):
     
     name = Str
     channel = Str
-    variable = Str
+    by = Str
     function = Callable
     #orientation = Enum("horizontal", "vertical")
     xfacet = Str
@@ -109,34 +119,34 @@ class BarChartView(HasStrictTraits):
         """Plot a bar chart"""
         
         if not experiment:
-            raise CytoflowViewError("No experiment specified")
+            raise util.CytoflowViewError("No experiment specified")
 
         if not self.channel:
-            raise CytoflowViewError("Channel not specified")
+            raise util.CytoflowViewError("Channel not specified")
         
         if self.channel not in experiment.data:
-            raise CytoflowViewError("Channel {0} isn't in the experiment"
+            raise util.CytoflowViewError("Channel {0} isn't in the experiment"
                                     .format(self.channel))
         
-        if not self.variable:
-            raise CytoflowViewError("Variable not specified")
+        if not self.by:
+            raise util.CytoflowViewError("Variable not specified")
         
-        if not self.variable in experiment.conditions:
-            raise CytoflowViewError("Variable {0} isn't in the experiment")
+        if not self.by in experiment.conditions:
+            raise util.CytoflowViewError("Variable {0} isn't in the experiment")
         
         if not self.function:
-            raise CytoflowViewError("Function not specified")
+            raise util.CytoflowViewError("Function not specified")
         
         if self.xfacet and self.xfacet not in experiment.conditions:
-            raise CytoflowViewError("X facet {0} isn't in the experiment"
+            raise util.CytoflowViewError("X facet {0} isn't in the experiment"
                                     .format(self.xfacet))
         
         if self.yfacet and self.yfacet not in experiment.metadata:
-            raise CytoflowViewError("Y facet {0} isn't in the experiment"
+            raise util.CytoflowViewError("Y facet {0} isn't in the experiment"
                                     .format(self.yfacet))
 
         if self.huefacet and self.huefacet not in experiment.metadata:
-            raise CytoflowViewError("Hue facet {0} isn't in the experiment"
+            raise util.CytoflowViewError("Hue facet {0} isn't in the experiment"
                                     .format(self.huefacet))
         
 #         if self.error_bars == 'data' and self.error_function is None:
@@ -151,16 +161,16 @@ class BarChartView(HasStrictTraits):
             try:
                 data = experiment.query(self.subset)
             except:
-                raise CytoflowViewError("Subset string {0} isn't valid"
+                raise util.CytoflowViewError("Subset string {0} isn't valid"
                                         .format(self.subset))
                             
             if len(data.index) == 0:
-                raise CytoflowViewError("Subset string '{0}' returned no events"
+                raise util.CytoflowViewError("Subset string '{0}' returned no events"
                                         .format(self.subset))
         else:
             data = experiment.data
             
-        sns.factorplot(x = self.variable,
+        sns.factorplot(x = self.by,
                        y = self.channel,
                        data = data,
                        size = 6,
@@ -170,6 +180,7 @@ class BarChartView(HasStrictTraits):
                        hue = (self.huefacet if self.huefacet else None),
                        col_order = (np.sort(data[self.xfacet].unique()) if self.xfacet else None),
                        row_order = (np.sort(data[self.yfacet].unique()) if self.yfacet else None),
+                       hue_order = (np.sort(data[self.huefacet].unique()) if self.huefacet else None),
                        # something buggy here.
                        #orient = ("h" if self.orientation == "horizontal" else "v"),
                        estimator = self.function,
@@ -219,7 +230,7 @@ if __name__ == '__main__':
     s = flow.BarChartView()
     s.channel = "V2-A"
     s.function = flow.geom_mean
-    s.variable = "Dox"
+    s.by = "Dox"
     s.huefacet = "Y2-A+"
     #s.error_bars = "data"
     #s.error_var = "Repl"

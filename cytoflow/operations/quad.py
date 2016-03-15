@@ -1,15 +1,36 @@
-from traits.api import HasStrictTraits, CFloat, Str, CStr, Bool, Instance, \
-    provides, on_trait_change, DelegatesTo, Any, Constant
-from cytoflow.operations import IOperation
-from cytoflow.utility import CytoflowOpError, CytoflowViewError
-from cytoflow.views import ISelectionView
-from cytoflow.views.scatterplot import ScatterplotView
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from __future__ import division, absolute_import
+
+from traits.api import (HasStrictTraits, CFloat, Str, CStr, Bool, Instance,
+                        provides, on_trait_change, DelegatesTo, Any, Constant)
 
 from matplotlib.widgets import Cursor
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 import numpy as np
+import pandas as pd
+
+import cytoflow.utility as util
+import cytoflow.views
+
+from .i_operation import IOperation
 
 @provides(IOperation)
 class QuadOp(HasStrictTraits):
@@ -88,83 +109,63 @@ class QuadOp(HasStrictTraits):
         
         # make sure name got set!
         if not self.name:
-            raise CytoflowOpError("You have to set the gate's name "
+            raise util.CytoflowOpError("You have to set the gate's name "
                                   "before applying it!")
         
         # make sure old_experiment doesn't already have a column named self.name
         if(self.name in experiment.data.columns):
-            raise CytoflowOpError("Experiment already contains a column {0}"
+            raise util.CytoflowOpError("Experiment already contains a column {0}"
                                .format(self.name))
         
         if not self.xchannel or not self.ychannel:
-            raise CytoflowOpError("Must specify xchannel and ychannel")
+            raise util.CytoflowOpError("Must specify xchannel and ychannel")
+
+        if not self.xchannel in experiment.channels:
+            raise util.CytoflowOpError("xchannel isn't in the experiment")
         
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
-        
-        if not self.xchannel in exp_channels:
-            raise CytoflowOpError("xchannel isn't in the experiment")
-        
-        if not self.ychannel in exp_channels:
-            raise CytoflowOpError("ychannel isn't in the experiment")
+        if not self.ychannel in experiment.channels:
+            raise util.CytoflowOpError("ychannel isn't in the experiment")
         
         if not self.xthreshold:
-            raise CytoflowOpError('xthreshold must be set!')
+            raise util.CytoflowOpError('xthreshold must be set!')
         
         if not self.ythreshold:
-            raise CytoflowOpError('ythreshold must be set!')
-        
-#         if self.xthreshold <= experiment[self.xchannel].min():
-#             raise CytoflowOpError("x threshold must be > {0}"
-#                                   .format(experiment[self.xchannel].min()))
-#         if self.xthreshold >= experiment[self.xchannel].max:
-#             raise CytoflowOpError("x threshold must be < {0}"
-#                                   .format(experiment[self.xchannel].max()))
-#             
-#         if self.ythreshold <= experiment[self.ychannel].min():
-#             raise CytoflowOpError("y channel range high must be > {0}"
-#                                   .format(experiment[self.ychannel].min()))
-#         if self.ythreshold >= experiment[self.ychannel].max:
-#             raise CytoflowOpError("y channel range low must be < {0}"
-#                                   .format(experiment[self.ychannel].max()))
-        
-        new_experiment = experiment.clone()
-        new_experiment[self.name] = self.name
+            raise util.CytoflowOpError('ythreshold must be set!')
+
+        gate = pd.Series([None] * len(experiment))
         
         # perhaps there's some more pythonic way to do this?
         
         # upper-left
-        ul = np.logical_and(new_experiment[self.xchannel] < self.xthreshold,
-                            new_experiment[self.ychannel] > self.ythreshold)
-        new_experiment.data.loc[ul, self.name] = self.name + '_1'
+        ul = np.logical_and(experiment[self.xchannel] < self.xthreshold,
+                            experiment[self.ychannel] > self.ythreshold)
+        gate.loc[ul] = self.name + '_1'
 
         # upper-right
-        ur = np.logical_and(new_experiment[self.xchannel] > self.xthreshold,
-                            new_experiment[self.ychannel] > self.ythreshold)
-        new_experiment.data.loc[ur, self.name] = self.name + '_2'
+        ur = np.logical_and(experiment[self.xchannel] > self.xthreshold,
+                            experiment[self.ychannel] > self.ythreshold)
+        gate.loc[ur] = self.name + '_2'
         
         # lower-right
-        lr = np.logical_and(new_experiment[self.xchannel] > self.xthreshold,
-                            new_experiment[self.ychannel] < self.ythreshold)
-        new_experiment.data.loc[lr, self.name] = self.name + '_3'
+        lr = np.logical_and(experiment[self.xchannel] > self.xthreshold,
+                            experiment[self.ychannel] < self.ythreshold)
+        gate.loc[lr] = self.name + '_3'
 
         # lower-left
-        ll = np.logical_and(new_experiment[self.xchannel] < self.xthreshold,
-                            new_experiment[self.ychannel] < self.ythreshold)
-        new_experiment.data.loc[ll, self.name] = self.name + '_4'
-        
-        new_experiment.conditions[self.name] = 'category'
-        new_experiment.metadata[self.name] = {}
-        new_experiment.metadata[self.name]['type'] = 'meta'
+        ll = np.logical_and(experiment[self.xchannel] < self.xthreshold,
+                            experiment[self.ychannel] < self.ythreshold)
+        gate.loc[ll] = self.name + '_4'
 
+        new_experiment = experiment.clone()
+        new_experiment.add_condition(self.name, "category", gate)
+        new_experiment.history.append(self.clone_traits())
         return new_experiment
     
-    def default_view(self):
-        return QuadSelection(op = self)
+    def default_view(self, **kwargs):
+        return QuadSelection(op = self, **kwargs)
     
-@provides(ISelectionView)
-class QuadSelection(ScatterplotView):
+@provides(cytoflow.views.ISelectionView)
+class QuadSelection(cytoflow.views.ScatterplotView):
     """Plots, and lets the user interact with, a quadrant gate.
     
     Attributes
@@ -220,16 +221,16 @@ class QuadSelection(ScatterplotView):
         """Plot the underlying scatterplot and then plot the selection on top of it."""
         
         if not experiment:
-            raise CytoflowOpError("No experiment specified")
+            raise util.CytoflowOpError("No experiment specified")
         
         if not experiment:
-            raise CytoflowViewError("No experiment specified")
+            raise util.CytoflowViewError("No experiment specified")
         
         if self.xfacet:
-            raise CytoflowViewError("RangeSelection.xfacet must be empty or `Undefined`")
+            raise util.CytoflowViewError("RangeSelection.xfacet must be empty or `Undefined`")
         
         if self.yfacet:
-            raise CytoflowViewError("RangeSelection.yfacet must be empty or `Undefined`")
+            raise util.CytoflowViewError("RangeSelection.yfacet must be empty or `Undefined`")
         
         super(QuadSelection, self).plot(experiment, **kwargs)
         self._ax = plt.gca()
@@ -276,40 +277,29 @@ class QuadSelection(ScatterplotView):
     
 if __name__ == '__main__':
     import cytoflow as flow
-    import fcsparser
+    tube1 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
+                      conditions = {"Dox" : 10.0})
     
-    tube1 = fcsparser.parse('../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
+    tube2 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
+                      conditions = {"Dox" : 1.0})                      
 
-    tube2 = fcsparser.parse('../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-    
-    ex = flow.Experiment()
-    ex.add_conditions({"Dox" : "float"})
-    
-    ex.add_tube(tube1, {"Dox" : 10.0})
-    ex.add_tube(tube2, {"Dox" : 1.0})
-    
-    hlog = flow.HlogTransformOp()
-    hlog.name = "Hlog transformation"
-    hlog.channels = ['V2-A', 'Y2-A']
-    ex2 = hlog.apply(ex)
-    
+    ex = flow.ImportOp(conditions = {"Dox" : "float"}, tubes = [tube1, tube2])
+
     r = flow.QuadOp(name = "Quad",
                     xchannel = "V2-A",
                     ychannel = "Y2-A")
-    rv = r.default_view()
+    rv = r.default_view(xscale = "logicle", yscale = "logicle")
     
     plt.ioff()
-    rv.plot(ex2)
+    rv.plot(ex)
     rv.interactive = True
     plt.show()
     print "x:{0}  y:{1}".format(r.xthreshold, r.ythreshold)
-    ex3 = r.apply(ex2)
+    ex2 = r.apply(ex)
     
     flow.ScatterplotView(xchannel = "V2-A",
                          ychannel = "Y2-A",
-                         huefacet = "Quad").plot(ex3)
+                         xscale = "logicle",
+                         yscale = "logicle",
+                         huefacet = "Quad").plot(ex2)
     plt.show()

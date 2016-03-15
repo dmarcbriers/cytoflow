@@ -1,26 +1,46 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Mar 15, 2015
 
 @author: brian
 """
-
-if __name__ == '__main__':
-    from traits.etsconfig.api import ETSConfig
-    ETSConfig.toolkit = 'qt4'
-
-    import os
-    os.environ['TRAITS_DEBUG'] = "1"
+# 
+# if __name__ == '__main__':
+#     from traits.etsconfig.api import ETSConfig
+#     ETSConfig.toolkit = 'qt4'
+# 
+#     import os
+#     os.environ['TRAITS_DEBUG'] = "1"
 
 from traitsui.api import View, Item, Controller
-from traits.api import Button, Property, cached_property, provides, Callable
-from cytoflowgui.import_dialog import ExperimentDialog
-from cytoflowgui.op_plugins.i_op_plugin \
-    import IOperationPlugin, OpHandlerMixin, PluginOpMixin
+from traits.api import Button, Property, cached_property, provides, Callable, \
+                       Bool
 from pyface.api import OK as PyfaceOK
+from envisage.api import Plugin
+
 from cytoflow import ImportOp
 from cytoflow.operations.i_operation import IOperation
-from envisage.api import Plugin
-from cytoflowgui.color_text_editor import ColorTextEditor
+                       
+from cytoflowgui.import_dialog import ExperimentDialog
+from cytoflowgui.op_plugins.i_op_plugin \
+    import IOperationPlugin, OpHandlerMixin, PluginOpMixin, shared_op_traits
+
 
 class ImportHandler(Controller, OpHandlerMixin):
     """
@@ -48,12 +68,7 @@ class ImportHandler(Controller, OpHandlerMixin):
                     Item('object.coarse_events',
                          label="Events per\nsample",
                          visible_when='handler.wi.result is not None and object.coarse == True'),
-                    Item('handler.wi.error',
-                         label = 'Error',
-                         visible_when = 'handler.wi.error',
-                         editor = ColorTextEditor(foreground_color = "#000000",
-                                                  background_color = "#ff9191",
-                                                  word_wrap = True)))
+                    shared_op_traits)
         
     def _import_event_fired(self):
         """
@@ -91,6 +106,7 @@ class ImportHandler(Controller, OpHandlerMixin):
 @provides(IOperation)
 class ImportPluginOp(ImportOp, PluginOpMixin):
     handler_factory = Callable(ImportHandler)
+    coarse = Bool(False)
             
 @provides(IOperationPlugin)
 class ImportPlugin(Plugin):

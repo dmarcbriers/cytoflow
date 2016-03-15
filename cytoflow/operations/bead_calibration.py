@@ -1,26 +1,41 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 '''
 Created on Aug 31, 2015
 
 @author: brian
 '''
 
+from __future__ import division, absolute_import
 
-from __future__ import division
-
-import warnings
-
-from traits.api import HasStrictTraits, Str, CStr, File, Dict, Python, \
-                       Instance, Int, List, Float, Constant, provides
+from traits.api import (HasStrictTraits, Str, CStr, File, Dict, Python,
+                        Instance, Int, List, Float, Constant, provides)
 import numpy as np
-import fcsparser
 import math
 import scipy.signal
         
 import matplotlib.pyplot as plt
 
-from cytoflow.operations import IOperation
-from cytoflow.views import IView
-from cytoflow.utility import CytoflowOpError, CytoflowViewError
+import cytoflow.views
+import cytoflow.utility as util
+
+from .i_operation import IOperation
+from .import_op import parse_tube
 
 @provides(IOperation)
 class BeadCalibrationOp(HasStrictTraits):
@@ -96,7 +111,7 @@ class BeadCalibrationOp(HasStrictTraits):
     
     How to convert from a series of peaks to mean equivalent fluorochrome?
     If there's one peak, we assume that it's the brightest peak.  If there
-    are two peaks, we assume they're the brighest two.  If there are n >=3
+    are two peaks, we assume they're the brightest two.  If there are n >=3
     peaks, we check all the contiguous n-subsets of the bead intensities
     and find the one whose linear regression (in log space!) has the smallest
     norm (square-root sum-of-squared-residuals.)
@@ -154,54 +169,22 @@ class BeadCalibrationOp(HasStrictTraits):
         Estimate the calibration coefficients from the beads file.
         """
         if not experiment:
-            raise CytoflowOpError("No experiment specified")
-        
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
+            raise util.CytoflowOpError("No experiment specified")
 
-        if not set(self.units.keys()) <= set(exp_channels):
-            raise CytoflowOpError("Specified channels that weren't found in "
+        if not set(self.units.keys()) <= set(experiment.channels):
+            raise util.CytoflowOpError("Specified channels that weren't found in "
                                   "the experiment.")
+            
+        if not set(self.units.values()) <= set(self.beads.keys()):
+            raise util.CytoflowOpError("Units don't match beads.")
         
-        try:
-            channel_naming = experiment.metadata["name_meta"]
-            beads_meta, beads_data = \
-                fcsparser.parse(self.beads_file, 
-                                reformat_meta = True,
-                                channel_naming = channel_naming)
-            beads_channels = beads_meta["_channels_"].set_index("$PnN")
-        except Exception as e:
-            raise CytoflowOpError("FCS reader threw an error on tube {0}: {1}"\
-                               .format(self.beads_file, str(e)))
-        
+        beads_data = parse_tube(self.beads_file, experiment)
         channels = self.units.keys()
-
-        # make sure the voltages didn't change
-        
-        for channel in channels:
-            if (channel not in experiment.metadata
-                or 'voltage' not in experiment.metadata[channel]):
-                raise CytoflowOpError("Didn't find voltage for channel {0}"
-                                      .format(channel))
-                
-            exp_v = experiment.metadata[channel]['voltage']
-        
-            if not "$PnV" in beads_channels.ix[channel]:
-                raise CytoflowOpError("Didn't find a voltage for channel {0}" \
-                                   "in tube {1}".format(channel, self.beads_file))
-            
-            control_v = beads_channels.ix[channel]['$PnV']
-            
-            if control_v != exp_v:
-                raise CytoflowOpError("Voltage differs for channel {0} in tube {1}"
-                                   .format(channel, self.beads_file))
-    
 
         for channel in channels:
             data = beads_data[channel]
             
-            #TODO - this assumes the data is on a linear scale.  check it!
+            # TODO - this assumes the data is on a linear scale.  check it!
             
             # bin the data on a log scale
             data_range = experiment.metadata[channel]['range']
@@ -231,22 +214,22 @@ class BeadCalibrationOp(HasStrictTraits):
             mef_unit = self.units[channel]
             
             if not mef_unit in self.beads:
-                raise CytoflowOpError("Invalid unit {0} specified for channel {1}".format(mef_unit, channel))
+                raise util.CytoflowOpError("Invalid unit {0} specified for channel {1}".format(mef_unit, channel))
             
             # "mean equivalent fluorochrome"
             mef = self.beads[mef_unit]
             
             if len(peaks) == 0:
-                raise CytoflowOpError("Didn't find any peaks; check the diagnostic plot")
+                raise util.CytoflowOpError("Didn't find any peaks; check the diagnostic plot")
             elif len(peaks) > len(self.beads):
-                raise CytoflowOpError("Found too many peaks; check the diagnostic plot")
+                raise util.CytoflowOpError("Found too many peaks; check the diagnostic plot")
             elif len(peaks) == 1:
                 # if we only have one peak, assume it's the brightest peak
-                a = [mef[-1] / peaks[0]]
+                a = mef[-1] / peaks[0]
                 self._calibration_functions[channel] = lambda x, a=a: a * x
             elif len(peaks) == 2:
                 # if we have only two peaks, assume they're the brightest two
-                a = [(mef[-1] - mef[-2]) / (peaks[1] - peaks[0])]
+                a = (mef[-1] - mef[-2]) / (peaks[1] - peaks[0])
                 self._calibration_functions[channel] = lambda x, a=a: a * x
             else:
                 # if there are n > 2 peaks, check all the contiguous n-subsets
@@ -268,7 +251,6 @@ class BeadCalibrationOp(HasStrictTraits):
                     
                     resid = lr[1][0]
                     if resid < best_resid:
-                        best_subset = mef_subset
                         best_lr = lr[0]
                         best_resid = resid
                         
@@ -300,31 +282,24 @@ class BeadCalibrationOp(HasStrictTraits):
             a new experiment calibrated in physical units.
         """
         if not experiment:
-            raise CytoflowOpError("No experiment specified")
+            raise util.CytoflowOpError("No experiment specified")
         
         channels = self.units.keys()
 
         if not self.units:
-            raise CytoflowOpError("Units not specified.")
+            raise util.CytoflowOpError("Units not specified.")
         
         if not self._calibration_functions:
-            raise CytoflowOpError("Calibration not found. "
+            raise util.CytoflowOpError("Calibration not found. "
                                   "Did you forget to call estimate()?")
-            
-        exp_channels = [x for x in experiment.metadata 
-                        if 'type' in experiment.metadata[x] 
-                        and experiment.metadata[x]['type'] == "channel"]
         
-        if not set(channels) <= set(exp_channels):
-            raise CytoflowOpError("Module units don't match experiment channels")
+        if not set(channels) <= set(experiment.channels):
+            raise util.CytoflowOpError("Module units don't match experiment channels")
                 
         if set(channels) != set(self._calibration_functions.keys()):
-            raise CytoflowOpError("Calibration doesn't match units. "
+            raise util.CytoflowOpError("Calibration doesn't match units. "
                                   "Did you forget to call estimate()?")
-        
-        if not set(self.units.values()) <= set(self.beads.keys()):
-            raise CytoflowOpError("Units don't match beads.")
-        
+
         # two things.  first, you can't raise a negative value to a non-integer
         # power.  second, negative physical units don't make sense -- how can
         # you have the equivalent of -5 molecules of fluoresceine?  so,
@@ -344,11 +319,13 @@ class BeadCalibrationOp(HasStrictTraits):
             new_experiment[channel] = calibration_fn(new_experiment[channel])
             new_experiment.metadata[channel]['bead_calibration_fn'] = calibration_fn
             new_experiment.metadata[channel]['units'] = self.units[channel]
-            new_experiment.metadata[channel]['range'] = calibration_fn(experiment.metadata[channel]['range'])
+            if 'range' in experiment.metadata[channel]:
+                new_experiment.metadata[channel]['range'] = calibration_fn(experiment.metadata[channel]['range'])
             
+        new_experiment.history.append(self.clone_traits()) 
         return new_experiment
     
-    def default_view(self):
+    def default_view(self, **kwargs):
         """
         Returns a diagnostic plot to see if the bleedthrough spline estimation
         is working.
@@ -357,19 +334,8 @@ class BeadCalibrationOp(HasStrictTraits):
         -------
             IView : An IView, call plot() to see the diagnostic plots
         """
-        
-        try:
-            # suppress the channel name warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                _ = fcsparser.parse(self.beads_file, 
-                                    meta_data_only = True, 
-                                    reformat_meta = True)
-        except Exception as e:
-            raise CytoflowOpError("FCS reader threw an error on tube {0}: {1}"\
-                               .format(self.beads_file, str(e)))
 
-        return BeadCalibrationDiagnostic(op = self)
+        return BeadCalibrationDiagnostic(op = self, **kwargs)
     
     BEADS = {
              # from http://www.spherotech.com/RCP-30-5a%20%20rev%20H%20ML%20071712.xls
@@ -395,7 +361,7 @@ class BeadCalibrationOp(HasStrictTraits):
                   "MEAP" :  [587, 2433, 6720, 17962, 30866, 51704, 146080],
                   "MEAPCY7" : [718, 1920, 5133, 9324, 14210, 26735]}}
     
-@provides(IView)
+@provides(cytoflow.views.IView)
 class BeadCalibrationDiagnostic(HasStrictTraits):
     """
     Plots diagnostic histograms of the peak finding algorithm.
@@ -422,19 +388,7 @@ class BeadCalibrationDiagnostic(HasStrictTraits):
     def plot(self, experiment, **kwargs):
         """Plot a faceted histogram view of a channel"""
       
-        try:
-            channel_naming = experiment.metadata["name_meta"]
-            beads_meta, beads_data = \
-                fcsparser.parse(self.op.beads_file, 
-                                reformat_meta = True,
-                                channel_naming = channel_naming)
-            beads_channels = beads_meta["_channels_"].set_index("$PnN")
-        except Exception as e:
-            raise CytoflowOpError("FCS reader threw an error on tube {0}: {1}"\
-                               .format(self.op.beads_file, str(e)))
-        
-        import matplotlib.pyplot as plt
-        import seaborn
+        beads_data = parse_tube(self.op.beads_file, experiment)
 
         plt.figure()
         
@@ -444,7 +398,7 @@ class BeadCalibrationDiagnostic(HasStrictTraits):
             data = beads_data[channel]
             
             # bin the data on a log scale
-            data_range = float(beads_channels.ix[channel]['$PnR'])
+            data_range = experiment.metadata[channel]['range']
             hist_bins = np.logspace(1, math.log(data_range, 2), num = 256, base = 2)
             hist = np.histogram(data, bins = hist_bins)
             

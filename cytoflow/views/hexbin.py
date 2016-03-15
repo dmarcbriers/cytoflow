@@ -1,8 +1,30 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Apr 19, 2015
 
 @author: brian
 """
+
+from __future__ import division, absolute_import
+
+import warnings
+
 from traits.api import HasStrictTraits, provides, Str
 
 import matplotlib.pyplot as plt
@@ -10,8 +32,8 @@ import numpy as np
 import seaborn as sns
 import matplotlib.transforms as mtrans
 
-from cytoflow.views import IView
-from cytoflow.utility import num_hist_bins, CytoflowViewError
+import cytoflow.utility as util
+from .i_view import IView
 
 @provides(IView)
 class HexbinView(HasStrictTraits):
@@ -55,6 +77,8 @@ class HexbinView(HasStrictTraits):
     name = Str
     xchannel = Str
     ychannel = Str
+    xscale = util.ScaleEnum
+    yscale = util.ScaleEnum
     xfacet = Str
     yfacet = Str
     huefacet = Str
@@ -64,38 +88,38 @@ class HexbinView(HasStrictTraits):
         """Plot a faceted histogram view of a channel"""
         
         if not experiment:
-            raise CytoflowViewError("No experiment specified")
+            raise util.CytoflowViewError("No experiment specified")
         
         if not self.xchannel:
-            raise CytoflowViewError("X channel not specified")
+            raise util.CytoflowViewError("X channel not specified")
         
         if self.xchannel not in experiment.data:
-            raise CytoflowViewError("X channel {0} not in the experiment"
+            raise util.CytoflowViewError("X channel {0} not in the experiment"
                                     .format(self.xchannel))
             
         if not self.ychannel:
-            raise CytoflowViewError("Y channel not specified")
+            raise util.CytoflowViewError("Y channel not specified")
         
         if self.ychannel not in experiment.data:
-            raise CytoflowViewError("Y channel {0} not in the experiment")
+            raise util.CytoflowViewError("Y channel {0} not in the experiment")
         
         if self.xfacet and self.xfacet not in experiment.conditions:
-            raise CytoflowViewError("X facet {0} not in the experiment")
+            raise util.CytoflowViewError("X facet {0} not in the experiment")
         
         if self.yfacet and self.yfacet not in experiment.conditions:
-            raise CytoflowViewError("Y facet {0} not in the experiment")
+            raise util.CytoflowViewError("Y facet {0} not in the experiment")
         
         if self.huefacet and self.huefacet not in experiment.metadata:
-            raise CytoflowViewError("Hue facet {0} not in the experiment")
+            raise util.CytoflowViewError("Hue facet {0} not in the experiment")
 
         if self.subset:
             try: 
                 data = experiment.query(self.subset)
             except:
-                raise CytoflowViewError("Subset string \'{0}\' not valid")
+                raise util.CytoflowViewError("Subset string \'{0}\' not valid")
                             
             if len(data.index) == 0:
-                raise CytoflowViewError("Subset string '{0}' returned no events"
+                raise util.CytoflowViewError("Subset string '{0}' returned no events"
                                         .format(self.subset))
         else:
             data = experiment.data
@@ -116,8 +140,8 @@ class HexbinView(HasStrictTraits):
         extent = (xmin, xmax, ymin, ymax)
         kwargs.setdefault('extent', extent)
         
-        xbins = num_hist_bins(experiment[self.xchannel])
-        ybins = num_hist_bins(experiment[self.ychannel])
+        xbins = util.num_hist_bins(experiment[self.xchannel])
+        ybins = util.num_hist_bins(experiment[self.ychannel])
         bins = np.mean([xbins, ybins])
         
         kwargs.setdefault('bins', bins) # Do not move above.  don't ask.
@@ -130,42 +154,39 @@ class HexbinView(HasStrictTraits):
                           hue = (self.huefacet if self.huefacet else None),
                           col_order = (np.sort(data[self.xfacet].unique()) if self.xfacet else None),
                           row_order = (np.sort(data[self.yfacet].unique()) if self.yfacet else None),
-                          hue_order = (np.sort(data[self.huefacet].unique()) if self.huefacet else None),)
+                          hue_order = (np.sort(data[self.huefacet].unique()) if self.huefacet else None),
+                          sharex = False,
+                          sharey = False)
+        
+        if(self.xscale != "linear" or self.yscale != "linear"):
+            warnings.warn("hexbin is broken with scales other than \"linear\"",
+                          util.CytoflowViewWarning)
+
+        xscale = util.scale_factory(self.xscale, experiment, self.xchannel)
+        yscale = util.scale_factory(self.yscale, experiment, self.ychannel)
+        
+        for ax in g.axes.flatten():
+            ax.set_xscale(self.xscale, **xscale.mpl_params)
+            ax.set_yscale(self.yscale, **yscale.mpl_params)
         
         g.map(plt.hexbin, self.xchannel, self.ychannel, **kwargs)
         
 if __name__ == '__main__':
     import cytoflow as flow
-    import fcsparser
+    tube1 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
+                      conditions = {"Dox" : 10.0})
     
-    import matplotlib as mpl
-    mpl.rcParams['savefig.dpi'] = 2 * mpl.rcParams['savefig.dpi']
-    
-    tube1 = fcsparser.parse('../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
+    tube2 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
+                      conditions = {"Dox" : 1.0})                      
 
-    tube2 = fcsparser.parse('../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-    
-    ex = flow.Experiment()
-    ex.add_conditions({"Dox" : "float"})
-    
-    ex.add_tube(tube1, {"Dox" : 10.0})
-    ex.add_tube(tube2, {"Dox" : 1.0})
-    
-    hlog = flow.HlogTransformOp()
-    hlog.name = "Hlog transformation"
-    hlog.channels = ['V2-A', 'Y2-A', 'B1-A', 'FSC-A', 'SSC-A']
-    ex2 = hlog.apply(ex)
+    ex = flow.ImportOp(conditions = {"Dox" : "float"}, tubes = [tube1, tube2])
     
     hexbin = flow.HexbinView()
     hexbin.name = "Hex"
     hexbin.xchannel = "FSC-A"
     hexbin.ychannel = "SSC-A"
     hexbin.huefacet = 'Dox'
-    
+
     plt.ioff()
-    hexbin.plot(ex2)
+    hexbin.plot(ex)
     plt.show()

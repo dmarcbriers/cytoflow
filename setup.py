@@ -1,3 +1,20 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 from __future__ import print_function
 from setuptools import setup, find_packages, Extension
 import io, os, re
@@ -44,14 +61,15 @@ setup(
     
     # Project uses reStructuredText, so ensure that the docutils get
     # installed or upgraded on the target machine
-    install_requires = ['pandas>=0.15.0',
+    install_requires = ['pandas>=0.17.0',
+                        'bottleneck>=1.0',
                         'fcsparser>=0.1.1',
                         'numpy>=1.9.0',
                         'numexpr>=2.1',
-                        'matplotlib==1.4.3',
+                        'matplotlib>=1.4.3',
                         'scipy>=0.14',
                         'scikit-learn>=0.16',
-                        'seaborn>=0.6.0',
+                        'seaborn>=0.7.0',
                         'pyface==4.4.0',
                         'envisage>=4.0'] \
                 if not on_rtd else None,
@@ -60,14 +78,14 @@ setup(
                         # via pypi and distutils.  Install it locally!
                         
     # try to build the Logicle extension
-    ext_modules = [Extension("cytoflow.operations.logicle_ext._Logicle",
-                             sources = ["cytoflow/operations/logicle_ext/FastLogicle.cpp",
-                                        "cytoflow/operations/logicle_ext/Logicle.cpp",
-                                        "cytoflow/operations/logicle_ext/Logicle.i"],
-                             depends = ["cytoflow/operations/logicle_ext/FastLogicle.cpp",
-                                        "cytoflow/operations/logicle_ext/Logicle.cpp",
-                                        "cytoflow/operations/logicle_ext/Logicle.i",
-                                        "cytoflow/operations/logicle_ext/logicle.h"],
+    ext_modules = [Extension("cytoflow.utility.logicle_ext._Logicle",
+                             sources = ["cytoflow/utility/logicle_ext/FastLogicle.cpp",
+                                        "cytoflow/utility/logicle_ext/Logicle.cpp",
+                                        "cytoflow/utility/logicle_ext/Logicle.i"],
+                             depends = ["cytoflow/utility/logicle_ext/FastLogicle.cpp",
+                                        "cytoflow/utility/logicle_ext/Logicle.cpp",
+                                        "cytoflow/utility/logicle_ext/Logicle.i",
+                                        "cytoflow/utility/logicle_ext/logicle.h"],
                              swig_opts=['-c++'])] \
                 if not (on_rtd or no_logicle) else None,
     
@@ -81,24 +99,25 @@ setup(
     author_email = "teague@mit.edu",
     description = "Python tools for quantitative, reproducible flow cytometry analysis",
     long_description = long_description,
-    license = "GPLv3",
+    license = "GPLv2",
     keywords = "flow cytometry scipy",
     url = "https://github.com/bpteague/cytoflow", 
     classifiers=[
-                 'Development Status :: 2 - Pre-Alpha',
+                 'Development Status :: 3 - Alpha',
                  'Environment :: Console',
                  'Environment :: MacOS X',
                  'Environment :: Win32 (MS Windows)',
                  'Environment :: X11 Applications :: Qt',
                  'Intended Audience :: Science/Research',
-                 'License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)',
+                 'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
                  'Natural Language :: English',
                  'Operating System :: MacOS',
                  'Operating System :: Microsoft :: Windows',
                  'Operating System :: POSIX :: Linux',
                  'Programming Language :: Python :: 2.7',
                  'Programming Language :: Python :: Implementation :: CPython',
-                 'Topic :: Scientific/Engineering :: Bio-Informatics'],
+                 'Topic :: Scientific/Engineering :: Bio-Informatics',
+                 'Topic :: Software Development :: Libraries :: Python Modules'],
     
     entry_points={'gui_scripts' : ['cytoflow = cytoflowgui:run_gui'],
                   'nose.plugins.0.10' : ['mplplugin = nose_plugins:MplPlugin']}

@@ -1,20 +1,37 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 '''
 Created on Sep 18, 2015
 
 @author: brian
 '''
 
-from __future__ import division
+from __future__ import division, absolute_import
 
-from traits.api import HasStrictTraits, Str, CStr, Enum, provides, Undefined, \
-    Instance, DelegatesTo, Constant
+from traits.api import (HasStrictTraits, Str, CStr, provides, Undefined,
+                        Instance, DelegatesTo, Constant)
 import numpy as np
+import bottleneck as bn
 
-from cytoflow.operations import IOperation
-from cytoflow.utility import CytoflowOpError, CytoflowViewError, \
-    PositiveInt, PositiveFloat
-from cytoflow.views.histogram import HistogramView
-from cytoflow.views import IView
+import cytoflow.views
+import cytoflow.utility as util
+
+from .i_operation import IOperation
 
 @provides(IOperation)
 class BinningOp(HasStrictTraits):
@@ -32,6 +49,9 @@ class BinningOp(HasStrictTraits):
         
     channel : Str
         The name of the channel along which to bin.
+
+    scale : Enum("linear", "log", "logicle)
+        Make the bins equidistant along what scale?
         
     num_bins = Int
         The number of bins to make.  Must set either `num_bins` or `bin_width`.
@@ -39,12 +59,10 @@ class BinningOp(HasStrictTraits):
         
     bin_width = Float
         The width of the bins.  Must set either `num_bins` or `bin_width`.  If
-        `scale` is `log10`, `bin_width` is in log-10 units.  If both `num_bins`
-        and `bin_width` are defined, `num_bins` takes precedence. 
-        
-    scale : Enum("linear", "log10")
-        Make the bins equidistant along what scale?
-        TODO - add other scales, like Logicle      
+        `scale` is `log`, `bin_width` is in log-10 units; if `scale` is
+        `logicle`, and error is thrown because the units are ill-defined.
+        If both `num_bins` and `bin_width` are defined, `num_bins` takes 
+        precedence. 
         
     bin_count_name : Str
         If `bin_count_name` is set, add another piece of metadata when calling
@@ -70,9 +88,9 @@ class BinningOp(HasStrictTraits):
     name = CStr()
     bin_count_name = CStr()
     channel = Str()
-    num_bins = PositiveInt(Undefined)
-    bin_width = PositiveFloat(Undefined)
-    scale = Enum("linear", "log10")
+    num_bins = util.PositiveInt(Undefined)
+    bin_width = util.PositiveFloat(Undefined)
+    scale = util.ScaleEnum
 
     def apply(self, experiment):
         """Applies the binning to an experiment.
@@ -90,72 +108,82 @@ class BinningOp(HasStrictTraits):
             less than self.high; it is False otherwise.
         """
         if not experiment:
-            raise CytoflowOpError("no experiment specified")
+            raise util.CytoflowOpError("no experiment specified")
         
         if not self.name:
-            raise CytoflowOpError("name is not set")
+            raise util.CytoflowOpError("name is not set")
         
         if self.name in experiment.data.columns:
-            raise CytoflowOpError("name {0} is in the experiment already"
+            raise util.CytoflowOpError("name {0} is in the experiment already"
                                   .format(self.name))
             
         if self.bin_count_name and self.bin_count_name in experiment.data.columns:
-            raise CytoflowOpError("bin_count_name {0} is in the experiment already"
+            raise util.CytoflowOpError("bin_count_name {0} is in the experiment already"
                                   .format(self.bin_count_name))
         
         if not self.channel:
-            raise CytoflowOpError("channel is not set")
+            raise util.CytoflowOpError("channel is not set")
         
         if self.channel not in experiment.data.columns:
-            raise CytoflowOpError("channel {0} isn't in the experiment"
+            raise util.CytoflowOpError("channel {0} isn't in the experiment"
                                   .format(self.channel))
               
         if self.num_bins is Undefined and self.bin_width is Undefined:
-            raise CytoflowOpError("must set either bin number or width")  
-            
-        channel_min = experiment.data[self.channel].min()
-        channel_max = experiment.data[self.channel].max()
+            raise util.CytoflowOpError("must set either bin number or width")
         
-        if self.scale == "linear":
-            num_bins = self.num_bins if self.num_bins is not Undefined else \
-                       (channel_max - channel_min) / self.bin_width
-            bins = np.linspace(start = channel_min, stop = channel_max,
-                               num = num_bins)
-        elif self.scale == "log10":
-            channel_min = channel_min if channel_min > 0 else 1
-            num_bins = self.num_bins if self.num_bins is not Undefined else \
-                       (np.log10(channel_max) - np.log10(channel_min)) / self.bin_width
-            bins = np.logspace(start = np.log10(channel_min),
-                               stop = np.log10(channel_max),
-                               num = num_bins,
-                               base = 10) 
+        if self.num_bins is Undefined \
+           and not (self.scale == "linear" or self.scale == "log"):
+            raise util.CytoflowOpError("Can only use bin_width with linear or log scale") 
+        
+        scale = util.scale_factory(self.scale, experiment, self.channel)
+        scaled_data = scale(experiment.data[self.channel])
+            
+        channel_min = bn.nanmin(scaled_data)
+        channel_max = bn.nanmax(scaled_data)
+        
+        num_bins = self.num_bins if self.num_bins is not Undefined else \
+                   (channel_max - channel_min) / self.bin_width
+
+        bins = np.linspace(start = channel_min, stop = channel_max,
+                           num = num_bins)
             
         # bins need to be internal; drop the first and last one
         bins = bins[1:-1]
             
         new_experiment = experiment.clone()
-        new_experiment[self.name] = np.digitize(experiment[self.channel], bins)
+        new_experiment.add_condition(self.name,
+                                     "int",
+                                     np.digitize(scaled_data, bins))
         
-        new_experiment.conditions[self.name] = "int"
-        new_experiment.metadata[self.name] = {}
+        # if we're log-scaled (for example), don't label data that isn't
+        # showable on a log scale!
+        new_experiment.data.ix[np.isnan(scaled_data), self.name] = np.NaN
+        
+        # keep track of the bins we used, for pretty plotting later.
+        new_experiment.metadata[self.name]["bin_scale"] = self.scale
         new_experiment.metadata[self.name]["bins"] = bins
         
         if self.bin_count_name:
             # TODO - this is a HUGE memory hog?!
             agg_count = new_experiment.data.groupby(self.name).count()
             agg_count = agg_count[agg_count.columns[0]]
-            new_experiment[self.bin_count_name] = \
-                new_experiment[self.name].map(agg_count)
-            new_experiment.conditions[self.bin_count_name] = "int"
-            new_experiment.metadata[self.bin_count_name] = {}
+            
+            # have to make the condition a float64, because if we're in log
+            # space there may be events that have NaN as the bin number.
+            
+            new_experiment.add_condition(
+                self.bin_count_name,
+                "float64",
+                new_experiment[self.name].map(agg_count))
         
+        new_experiment.history.append(self.clone_traits())
         return new_experiment
     
-    def default_view(self):
-        return BinningView(op = self)
+    def default_view(self, **kwargs):
+        return BinningView(op = self, **kwargs)
     
-@provides(IView)
-class BinningView(HistogramView):
+@provides(cytoflow.views.IView)
+class BinningView(cytoflow.views.HistogramView):
     """Plots a histogram of the current binning op, with the bins set to
        the hue facet.
        
@@ -183,14 +211,15 @@ class BinningView(HistogramView):
     op = Instance(IOperation)   
     name = DelegatesTo('op')
     channel = DelegatesTo('op')
+    scale = DelegatesTo('op')
     huefacet = DelegatesTo('op', 'name')
     
     def plot(self, experiment, **kwargs):
         if not self.huefacet:
-            raise CytoflowViewError("didn't set BinningOp.channel")
+            raise util.CytoflowViewError("didn't set BinningOp.name")
         
         try:
             temp_experiment = self.op.apply(experiment)
             super(BinningView, self).plot(temp_experiment, **kwargs)
-        except CytoflowOpError as e:
-            raise CytoflowViewError(e.__str__())
+        except util.CytoflowOpError as e:
+            raise util.CytoflowViewError(e.__str__())

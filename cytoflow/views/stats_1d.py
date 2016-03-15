@@ -1,25 +1,36 @@
-from __future__ import division
+#!/usr/bin/env python2.7
 
-if __name__ == '__main__':
-    from traits.etsconfig.api import ETSConfig
-    ETSConfig.toolkit = 'qt4'
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    import os
-    os.environ['TRAITS_DEBUG'] = "1"
+from __future__ import division, absolute_import
 
 from traits.api import HasStrictTraits, Str, provides, Callable
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import numpy as np
 import seaborn as sns
 
-from cytoflow.views import IView
-from cytoflow.utility import CytoflowViewError
+import cytoflow.utility as util
+from .i_view import IView
 
 @provides(IView)
 class Stats1DView(HasStrictTraits):
     """
-    Divide the data up by `variable`, then plot a line plot of `variable`
+    Divide the data up by `by`, then plot a line plot of `by`
     on the x axis with a summary statistic `yfunction` of the same data in 
     `ychannel` on the y axis. 
     
@@ -28,11 +39,11 @@ class Stats1DView(HasStrictTraits):
     name : Str
         The plot's name 
     
-    variable : Str
-        the name of the condition to put on the X axis
+    by : Str
+        the name of the conditioning variable to put on the X axis
 
     ychannel : Str
-        Apply `yfunction` to `ychannel` for each value of `variable`
+        Apply `yfunction` to `ychannel` for each value of `by`
         
     yfunction : Callable (list-like --> float)
         What summary function to apply to `ychannel`
@@ -84,7 +95,7 @@ class Stats1DView(HasStrictTraits):
     ...                            scale = "log",
     ...                            bin_width = 0.1).apply(ex)
     >>> view = Stats1DView(name = "Dox vs IFP",
-    ...                    variable = "Dox",
+    ...                    by = "Dox",
     ...                    ychannel = "Pacific Blue-A",
     ...                    huefacet = "CFP_Bin",
     ...                    yfunction = flow.geom_mean)
@@ -96,7 +107,7 @@ class Stats1DView(HasStrictTraits):
     friendly_id = "1D Statistics View" 
     
     name = Str
-    variable = Str
+    by = Str
     ychannel = Str
     yfunction = Callable
     xfacet = Str
@@ -120,38 +131,38 @@ class Stats1DView(HasStrictTraits):
         """Plot a bar chart"""
         
         if not experiment:
-            raise CytoflowViewError("No experiment specified")
+            raise util.CytoflowViewError("No experiment specified")
         
-        if not self.variable:
-            raise CytoflowViewError("Independent variable not set")
+        if not self.by:
+            raise util.CytoflowViewError("Stats1DView.by not set")
             
-        if self.variable not in experiment.conditions:
-            raise CytoflowViewError("Variable {0} not in the experiment"
-                                    .format(self.variable))
+        if self.by not in experiment.conditions:
+            raise util.CytoflowViewError("'by' variable {0} not in the experiment"
+                                    .format(self.by))
         
-        if not (experiment.conditions[self.variable] == "float" or
-                experiment.conditions[self.variable] == "int"):
-            raise CytoflowViewError("Variable {0} isn't numeric"
-                                    .format(self.variable)) 
+        if not (experiment.conditions[self.by] == "float" or
+                experiment.conditions[self.by] == "int"):
+            raise util.CytoflowViewError("by {0} isn't numeric"
+                                    .format(self.by)) 
 
         if not self.ychannel:
-            raise CytoflowViewError("Y channel isn't set.")
+            raise util.CytoflowViewError("Y channel isn't set.")
         
         if self.ychannel not in experiment.data:
-            raise CytoflowViewError("Y channel {0} isn't in the experiment"
+            raise util.CytoflowViewError("Y channel {0} isn't in the experiment"
                                     .format(self.ychannel))
         
         if not self.yfunction:
-            raise CytoflowViewError("Y summary function isn't set")
+            raise util.CytoflowViewError("Y summary function isn't set")
         
         if self.xfacet and self.xfacet not in experiment.conditions:
-            raise CytoflowViewError("X facet {0} not in the experiment")
+            raise util.CytoflowViewError("X facet {0} not in the experiment")
         
         if self.yfacet and self.yfacet not in experiment.conditions:
-            raise CytoflowViewError("Y facet {0} not in the experiment")
+            raise util.CytoflowViewError("Y facet {0} not in the experiment")
         
         if self.huefacet and self.huefacet not in experiment.metadata:
-            raise CytoflowViewError("Hue facet {0} not in the experiment")        
+            raise util.CytoflowViewError("Hue facet {0} not in the experiment")        
         
         kwargs.setdefault('antialiased', True)
 
@@ -159,16 +170,16 @@ class Stats1DView(HasStrictTraits):
             try:
                 data = experiment.query(self.subset)
             except:
-                raise CytoflowViewError("Subset string '{0}' isn't valid"
+                raise util.CytoflowViewError("Subset string '{0}' isn't valid"
                                         .format(self.subset))
                             
             if len(data.index) == 0:
-                raise CytoflowViewError("Subset string '{0}' returned no events"
+                raise util.CytoflowViewError("Subset string '{0}' returned no events"
                                         .format(self.subset))
         else:
             data = experiment.data
             
-        group_vars = [self.variable]
+        group_vars = [self.by]
         if self.xfacet:
             group_vars.append(self.xfacet)
         if self.yfacet:
@@ -188,66 +199,58 @@ class Stats1DView(HasStrictTraits):
                              col_order = (np.sort(data[self.xfacet].unique()) if self.xfacet else None),
                              row_order = (np.sort(data[self.yfacet].unique()) if self.yfacet else None),
                              hue_order = (np.sort(data[self.huefacet].unique()) if self.huefacet else None),
-                             legend_out = False)
+                             legend_out = False,
+                             sharex = False,
+                             sharey = False)
 
-        if 'repr' in experiment.metadata[self.variable] and \
-            experiment.metadata[self.variable]['repr'] == 'log':
+        if 'repr' in experiment.metadata[self.by] and \
+            experiment.metadata[self.by]['repr'] == 'log':
             plt.xscale('log', nonposx = 'mask')
         
-        grid.map(plt.plot, self.variable, self.ychannel, **kwargs)
-        grid.add_legend()
+        grid.map(plt.plot, self.by, self.ychannel, **kwargs)
+        
+        # if we have a hue facet and a lot of hues, make a color bar instead
+        # of a super-long legend.
+        
+        if self.huefacet:
+            current_palette = mpl.rcParams['axes.color_cycle']
+            if len(grid.hue_names) > len(current_palette):
+                plot_ax = plt.gca()
+                cmap = mpl.colors.ListedColormap(sns.color_palette("husl", 
+                                                                   n_colors = len(grid.hue_names)))
+                cax, kw = mpl.colorbar.make_axes(plt.gca())
+                norm = mpl.colors.Normalize(vmin = np.min(grid.hue_names), 
+                                            vmax = np.max(grid.hue_names), 
+                                            clip = False)
+                mpl.colorbar.ColorbarBase(cax, cmap = cmap, norm = norm, **kw)
+                plt.sca(plot_ax)
+            else:
+                grid.add_legend()
 
 if __name__ == '__main__':
     import cytoflow as flow
-    import fcsparser
+    
+    tube1 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
+                      conditions = {"Dox" : 10.0})
+    
+    tube2 = flow.Tube(file = '../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
+                      conditions = {"Dox" : 1.0})                      
 
-    tube1 = fcsparser.parse('../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-
-    tube2 = fcsparser.parse('../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-    
-    tube3 = fcsparser.parse('../../cytoflow/tests/data/Plate01/RFP_Well_A3.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-
-    tube4 = fcsparser.parse('../../cytoflow/tests/data/Plate01/CFP_Well_A4.fcs',
-                            reformat_meta = True,
-                            channel_naming = "$PnN")
-    
-    ex = flow.Experiment()
-    ex.add_conditions({"Dox" : "float"})
-    
-    ex.add_tube(tube1, {"Dox" : 10.0})
-    ex.add_tube(tube2, {"Dox" : 1.0})
-#     ex.add_tube(tube3, {"Dox" : 10.0, "Repl" : 2})
-#     ex.add_tube(tube4, {"Dox" : 1.0, "Repl" : 2})
-    
-    hlog = flow.HlogTransformOp()
-    hlog.name = "Hlog transformation"
-    hlog.channels = ['V2-A', 'Y2-A', 'B1-A', 'FSC-A', 'SSC-A']
-    ex2 = hlog.apply(ex)
+    ex = flow.ImportOp(conditions = {"Dox" : "float"}, tubes = [tube1, tube2])
     
     thresh = flow.ThresholdOp()
     thresh.name = "Y2-A+"
     thresh.channel = 'Y2-A'
     thresh.threshold = 2005.0
 
-    ex3 = thresh.apply(ex2)
+    ex2 = thresh.apply(ex)
     
     s = flow.Stats1DView()
-    s.variable = "Dox"
+    s.by = "Dox"
     s.ychannel = "Y2-A"
     s.yfunction = np.mean
     s.huefacet = "Y2-A+"
-#    s.group = "Dox"
-#    s.subgroup = "Y2-A+"
-#    s.error_bars = "data"
-    #s.error_var = "Repl"
-#    s.error_function = np.std
     
     plt.ioff()
-    s.plot(ex3)
+    s.plot(ex2)
     plt.show()

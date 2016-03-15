@@ -1,11 +1,29 @@
+#!/usr/bin/env python2.7
+
+# (c) Massachusetts Institute of Technology 2015-2016
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
 Created on Mar 15, 2015
 
 @author: brian
 """
 from traits.api import Interface, Str, HasTraits, Instance, Property, List
-from traitsui.api import Handler
+from traitsui.api import Group, Item
 from cytoflowgui.workflow_item import WorkflowItem
+from cytoflowgui.color_text_editor import ColorTextEditor
 
 OP_PLUGIN_EXT = 'edu.mit.synbio.cytoflow.op_plugins'
 
@@ -50,7 +68,21 @@ class IOperationPlugin(Interface):
         """
 
 class PluginOpMixin(HasTraits):
-    error = Str(transient = True)
+    pass
+
+shared_op_traits = Group(Item('handler.wi.warning',
+                              label = 'Warning',
+                              visible_when = 'handler.wi.warning',
+                              editor = ColorTextEditor(foreground_color = "#000000",
+                                                       background_color = "#ffff99",
+                                                       word_wrap = True)),
+                         Item('handler.wi.error',
+                               label = 'Error',
+                               visible_when = 'handler.wi.error',
+                               editor = ColorTextEditor(foreground_color = "#000000",
+                                                        background_color = "#ff9191",
+                                                        word_wrap = True)))
+
         
 class OpHandlerMixin(HasTraits):
     wi = Instance(WorkflowItem)
@@ -63,10 +95,8 @@ class OpHandlerMixin(HasTraits):
         """
         doc
         """
-        if self.wi and self.wi.previous and self.wi.previous.metadata:
-            return [x for x in experiment.metadata 
-                    if 'type' in experiment.metadata[x] 
-                    and experiment.metadata[x]['type'] == "channel"]
+        if self.wi and self.wi.previous and self.wi.previous.channels :
+            return self.wi.previous.channels
         else:
             return []
          
@@ -76,7 +106,7 @@ class OpHandlerMixin(HasTraits):
         doc
         """
         if self.wi and self.wi.previous and self.wi.previous.conditions:
-            return self.wi.conditions.keys()
+            return self.wi.previous.conditions.keys
         else:
             return []
     
